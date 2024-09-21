@@ -26,7 +26,7 @@ def validar_data(data):
         return None
     
 def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro):
-    
+
     try:
         data_nascimento_str = 'NULL' if data_nascimento is None else f"'{data_nascimento}'"
         data_cadastro_str = 'NULL' if data_cadastro is None else f"'{data_cadastro}'"
@@ -60,10 +60,16 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
 
 def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf):
     try:
+        if plano_id is None:
+            logging.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Plano não encontrado.")
+            return
+        
+        isento_str = 'TRUE' if isento else 'FALSE'
+
         session.execute(
-            f"INSERT INTO tbl_cliente_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, "
+            f"INSERT INTO tbl_clientes_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, "
             f"endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf) "
-            f"VALUES ({cliente_id}, {plano_id}, {vencimento}, {status_id}, {isento}, '{endereco}', '{numero}', "
+            f"VALUES ({cliente_id}, {plano_id}, {vencimento}, {status_id}, {isento_str}, '{endereco}', '{numero}', "
             f"'{complemento}', '{bairro}', '{cep}', '{cidade}', '{uf}')"
         )
         session.commit()
@@ -109,15 +115,17 @@ def processar_dados(arquivo_excel):
 
         if pd.isna(nome) or pd.isna(cpf_cnpj):
             motivo = f"Nome ou CPF/CNPJ ausente para o registro {row}"
+
             logging.info(motivo)
-            registros_nao_importados.append((row, motivo))
+
+            registros_nao_importados.append(motivo)
             continue
 
         cliente_id = inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro)
 
         if cliente_id is None:
             motivo = f"Erro ao inserir ou duplicidade no CPF/CNPJ {cpf_cnpj}"
-            registros_nao_importados.append((row, motivo))
+            registros_nao_importados.append(motivo)
             continue
 
         registros_importados += 1
@@ -138,14 +146,21 @@ def processar_dados(arquivo_excel):
     print(f"Total de registros não importados: {len(registros_nao_importados)}")
 
     if registros_nao_importados:
+
         print("\nRegistros não importados:")
+
         for registro, motivo in registros_nao_importados:
             print(f"Registro: {registro}, Motivo: {motivo}")
 
 def get_plano_id(plano):
     query = session.execute(f"SELECT id FROM tbl_planos WHERE descricao = '{plano}'")
     result = query.fetchone()
-    return result[0] if result else None
+    
+    if result:
+        return result[0]
+    else:
+        logging.info(f"Plano '{plano}' não encontrado")
+        return None  
 
 def get_status_id(status):
     query = session.execute(f"SELECT id FROM tbl_status_contrato WHERE status = '{status}'")
