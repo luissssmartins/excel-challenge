@@ -56,8 +56,29 @@ def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastr
 
     except exc.SQLAlchemyError as e:
         session.rollback()
-        logging.info(f"Erro ao inserir cliente com CPF/CNPJ {cpf_cnpj}")
+        logging.info(f"Erro ao inserir cliente com CPF/CNPJ {cpf_cnpj}, motivo: {e}")
         return None
+
+def inserir_plano(descricao_plano, valor_plano):
+    try:
+        query = "SELECT id FROM tbl_planos WHERE descricao = :descricao_plano"
+        result = session.execute(query, {'descricao_plano': descricao_plano}).fetchone()
+        
+        if result:
+            return result[0]
+        
+        insert_query = "INSERT INTO tbl_planos (descricao, valor) VALUES (:descricao, :valor) RETURNING id"
+        result = session.execute(insert_query, {'descricao': descricao_plano, 'valor': valor_plano}).fetchone()
+        
+        session.commit()
+        
+        return result[0] if result else None
+    
+    except exc.SQLAlchemyError as e:
+        session.rollback()
+        logging.info(f"Erro ao inserir o plano '{descricao_plano}', motivo: {e}")
+        return None
+
 
 def inserir_contato(cliente_id, tipo_contato_id, contato):
     try:
@@ -68,27 +89,31 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
         session.commit()
     except exc.SQLAlchemyError as e:
         session.rollback()
-        logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}")
+        logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}, motivo: {e}")
 
 def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf):
+    
     try:
         if plano_id is None:
             logging.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Plano não encontrado.")
             return
-        
-        isento_str = 'Sim' if isento else 'Não'
 
         session.execute(
-            f"INSERT INTO tbl_clientes_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, "
-            f"endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf) "
-            f"VALUES ({cliente_id}, {plano_id}, {vencimento}, {status_id}, {isento_str}, '{endereco}', '{numero}', "
-            f"'{complemento}', '{bairro}', '{cep}', '{cidade}', '{uf}')"
+            f"""
+            INSERT INTO tbl_cliente_contratos (
+                cliente_id, plano_id, dia_vencimento, status_id, "isento", 
+                endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf
+            ) VALUES (
+                {cliente_id}, {plano_id}, {vencimento}, {status_id}, {isento}, 
+                '{endereco}', '{numero}', '{complemento}', '{bairro}', '{cep}', '{cidade}', '{uf}'
+            )
+            """
         )
         session.commit()
 
     except exc.SQLAlchemyError as e:
         session.rollback()
-        logging.info(f"Erro ao inserir contrato do cliente ID {cliente_id}")
+        logging.info(f"Erro ao inserir contrato do cliente ID {cliente_id}, motivo: {e}")
 
 def processar_dados(arquivo_excel):
     try:
@@ -149,6 +174,8 @@ def processar_dados(arquivo_excel):
             inserir_contato(cliente_id, 2, telefones)  
         if not pd.isna(emails):
             inserir_contato(cliente_id, 3, emails)  
+
+        inserir_plano(plano, plano_valor)
 
         plano_id = get_plano_id(plano)  
         status_id = get_status_id(status)
