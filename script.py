@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import logging
 from datetime import datetime
 
-logging.basicConfig(filename='registros_nao_importados.log', level=logging.INFO)
+logging.basicConfig(filename='erros.log', level=logging.INFO)
 
 DATABASE_URI = 'postgresql+psycopg2://postgres:U5nhTr6fCx2KZ4dEtSbVRj@localhost:5432/challenge'
 
@@ -19,32 +19,44 @@ def cliente_existe(cpf_cnpj):
 
 def validar_data(data):
     try:
-        if pd.isna(data) or data == '':
+        if pd.isna(data):
             return None  
-        return datetime.strptime(str(data), '%Y-%m-%d').date()
+        return pd.to_datetime(data).strftime("%Y-%m-%d")
     except ValueError:
         return None
     
 def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro):
 
     try:
-        data_nascimento_str = 'NULL' if data_nascimento is None else f"'{data_nascimento}'"
-        data_cadastro_str = 'NULL' if data_cadastro is None else f"'{data_cadastro}'"
-        
+
+        data_nascimento = validar_data(data_nascimento)
+        data_cadastro = validar_data(data_cadastro)
+
         query = (
-            f"INSERT INTO tbl_clientes (nome_razao_social, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro) "
-            f"VALUES ('{nome}', '{nome_fantasia}', '{cpf_cnpj}', {data_nascimento_str}, {data_cadastro_str})"
+            "INSERT INTO tbl_clientes (nome_razao_social, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro) "
+            "VALUES (:nome, :nome_fantasia, :cpf_cnpj, :data_nascimento, :data_cadastro)"
         )
 
+        params = {
+            'nome': nome,
+            'nome_fantasia': nome_fantasia,
+            'cpf_cnpj': cpf_cnpj,
+            'data_nascimento': data_nascimento if data_nascimento else None,
+            'data_cadastro': data_cadastro if data_cadastro else None
+        }
+
         if not cliente_existe(cpf_cnpj):
-            session.execute(query)
+
+            session.execute(query, params)
             session.commit()
+
             return cliente_existe(cpf_cnpj)[0]  
         else:
             return cliente_existe(cpf_cnpj)[0]  
+
     except exc.SQLAlchemyError as e:
         session.rollback()
-        logging.info(f"Erro ao inserir cliente com CPF/CNPJ {cpf_cnpj}: {e}")
+        logging.info(f"Erro ao inserir cliente com CPF/CNPJ {cpf_cnpj}")
         return None
 
 def inserir_contato(cliente_id, tipo_contato_id, contato):
@@ -56,7 +68,7 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
         session.commit()
     except exc.SQLAlchemyError as e:
         session.rollback()
-        logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}: {e}")
+        logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}")
 
 def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf):
     try:
@@ -64,7 +76,7 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
             logging.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Plano não encontrado.")
             return
         
-        isento_str = 'TRUE' if isento else 'FALSE'
+        isento_str = 'Sim' if isento else 'Não'
 
         session.execute(
             f"INSERT INTO tbl_clientes_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, "
@@ -73,9 +85,10 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
             f"'{complemento}', '{bairro}', '{cep}', '{cidade}', '{uf}')"
         )
         session.commit()
+
     except exc.SQLAlchemyError as e:
         session.rollback()
-        logging.info(f"Erro ao inserir contrato do cliente ID {cliente_id}: {e}")
+        logging.info(f"Erro ao inserir contrato do cliente ID {cliente_id}")
 
 def processar_dados(arquivo_excel):
     try:
@@ -92,8 +105,8 @@ def processar_dados(arquivo_excel):
         nome = row.get('Nome/Razão Social')
         nome_fantasia = row.get('Nome Fantasia')
         cpf_cnpj = row.get('CPF/CNPJ')
-        data_nascimento = validar_data(row.get('Data Nascimento'))
-        data_cadastro = validar_data(row.get('Data Cadastro cliente'))
+        data_nascimento = row.get('Data Nasc.')
+        data_cadastro = row.get('Data Cadastro cliente')
         
         celulares = row.get('Celulares')
         telefones = row.get('Telefones')
@@ -149,8 +162,8 @@ def processar_dados(arquivo_excel):
 
         print("\nRegistros não importados:")
 
-        for registro, motivo in registros_nao_importados:
-            print(f"Registro: {registro}, Motivo: {motivo}")
+        for motivo in registros_nao_importados:
+            print(f"Motivo: {motivo}")
 
 def get_plano_id(plano):
     query = session.execute(f"SELECT id FROM tbl_planos WHERE descricao = '{plano}'")
