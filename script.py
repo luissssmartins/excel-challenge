@@ -7,7 +7,7 @@ from datetime import datetime
 
 logging.basicConfig(filename='erros.log', level=logging.INFO)
 
-DATABASE_URI = 'postgresql+psycopg2://postgres:U5nhTr6fCx2KZ4dEtSbVRj@localhost:5432/challenge'
+DATABASE_URI = 'postgresql+psycopg2://postgres:teste@localhost:5432/challenge'
 
 engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
@@ -23,6 +23,7 @@ def validar_data(data):
 
 def cliente_existe(cpf_cnpj):
     sql = text(f"SELECT id FROM tbl_clientes WHERE cpf_cnpj = '{cpf_cnpj}'")
+
     query = session.execute(sql)
     result = query.fetchone()
     return result
@@ -34,10 +35,7 @@ def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastr
         data_nascimento = validar_data(data_nascimento)
         data_cadastro = validar_data(data_cadastro)
 
-        sql = text((
-            "INSERT INTO tbl_clientes (nome_razao_social, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro) "
-            "VALUES (:nome, :nome_fantasia, :cpf_cnpj, :data_nascimento, :data_cadastro)"
-        ))
+        sql = text("INSERT INTO tbl_clientes (nome_razao_social, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro) VALUES (:nome, :nome_fantasia, :cpf_cnpj, :data_nascimento, :data_cadastro)")
 
         params = {
             'nome': nome,
@@ -97,7 +95,7 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
 
     try:
 
-        sql = text(f"SELECT id FROM tbl_cliente_contatos WHERE cliente_id = {cliente_id} AND tipo_contato_id = {tipo_contato_id} AND contato = '{contato}'")
+        sql = text(f"INSERT INTO tbl_cliente_contatos (cliente_id, tipo_contato_id, contato) VALUES ({cliente_id}, {tipo_contato_id}, '{contato}')")
 
         session.execute(sql)
         session.commit()
@@ -186,8 +184,6 @@ def processar_dados(arquivo_excel):
             registros_nao_importados.append(motivo)
             continue
 
-        registros_importados += 1
-
         if not pd.isna(celulares):
             inserir_contato(cliente_id, 1, celulares)  
         if not pd.isna(telefones):
@@ -201,6 +197,8 @@ def processar_dados(arquivo_excel):
         status_id = get_status_id(status)
 
         inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf)
+
+        registros_importados += 1
 
     print(f"Total de registros importados: {registros_importados}")
     print(f"Total de registros não importados: {len(registros_nao_importados)}")
