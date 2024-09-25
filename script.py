@@ -9,9 +9,44 @@ logging.basicConfig(filename='erros.log', level=logging.INFO)
 
 DATABASE_URI = 'postgresql+psycopg2://postgres:teste@localhost:5432/challenge'
 
+ESTADOS_BRASIL = {
+    'Acre': 'AC',
+    'Alagoas': 'AL',
+    'Amapá': 'AP',
+    'Amazonas': 'AM',
+    'Bahia': 'BA',
+    'Ceará': 'CE',
+    'Distrito Federal': 'DF',
+    'Espírito Santo': 'ES',
+    'Goiás': 'GO',
+    'Maranhão': 'MA',
+    'Mato Grosso': 'MT',
+    'Mato Grosso do Sul': 'MS',
+    "Olhos D' Água": 'MS',
+    'Minas Gerais': 'MG',
+    'Pará': 'PA',
+    'Paraíba': 'PB',
+    'Paraná': 'PR',
+    'Pernambuco': 'PE',
+    'Piauí': 'PI',
+    'Rio de Janeiro': 'RJ',
+    'Rio Grande do Norte': 'RN',
+    'Rio Grande do Sul': 'RS',
+    'Rondônia': 'RO',
+    'Roraima': 'RR',
+    'Santa Catarina': 'SC',
+    'São Paulo': 'SP',
+    'Sergipe': 'SE',
+    'Tocantins': 'TO'
+}
+
 engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
 session = Session()
+
+def converter_uf(estado):
+    estado = estado.strip()
+    return ESTADOS_BRASIL.get(estado, estado)
 
 def validar_data(data):
     try:
@@ -20,6 +55,13 @@ def validar_data(data):
         return pd.to_datetime(data).strftime("%Y-%m-%d")
     except ValueError:
         return None
+
+def contato_existe(cliente_id):
+    sql = text(f"SELECT cliente_id FROM tbl_cliente_contatos WHERE cliente_id = {cliente_id}")
+
+    query = session.execute(sql)
+    result = query.fetchone()
+    return result
 
 def cliente_existe(cpf_cnpj):
     sql = text(f"SELECT id FROM tbl_clientes WHERE cpf_cnpj = '{cpf_cnpj}'")
@@ -97,6 +139,15 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
 
         sql = text(f"INSERT INTO tbl_cliente_contatos (cliente_id, tipo_contato_id, contato) VALUES ({cliente_id}, {tipo_contato_id}, '{contato}')")
 
+        if not contato_existe(cliente_id):
+
+            session.execute(sql)
+            session.commit()
+
+            return contato_existe(cliente_id)[0]  
+        else:
+            return contato_existe(cliente_id)[0]  
+
         session.execute(sql)
         session.commit()
 
@@ -108,6 +159,10 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
 
     try:
 
+        if cliente_id is None:
+            loggigng.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Cliente não encontrado.")
+            return
+
         if plano_id is None:
             logging.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Plano não encontrado.")
             return
@@ -117,16 +172,29 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
         else:
             isento_condicao = False
 
-            sql = text(f"""
-            INSERT INTO tbl_cliente_contratos (
-                cliente_id, plano_id, dia_vencimento, status_id, isento, 
-                endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf
-            ) VALUES (
-                {cliente_id}, {plano_id}, {vencimento}, {status_id}, '{isento_condicao}', 
-                '{endereco}', '{numero}', '{complemento}', '{bairro}', '{cep}', '{cidade}', '{uf}'
-            )
-            """)
+        if len(uf) != 2:
+            uf_string = converter_uf(uf)
+        else:
+            uf_string = uf
 
+        sql = text("INSERT INTO tbl_cliente_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf) VALUES (:cliente_id, :plano_id, :vencimento, :status_id, :isento, :endereco_logradouro, :endereco_numero, :endereco_complemento, :endereco_bairro, :endereco_cep, :endereco_cidade, :endereco_uf)")
+
+        params = {
+            'cliente_id': cliente_id,
+            'plano_id': plano_id,
+            'vencimento': vencimento,
+            'status_id': status_id,
+            'isento': isento_condicao,
+            'endereco_logradouro': endereco,
+            'endereco_numero': numero,
+            'endereco_complemento': complemento,
+            'endereco_bairro': bairro,
+            'endereco_cep': cep,
+            'endereco_cidade': cidade,
+            'endereco_uf': uf_string
+        }
+
+        session.execute(sql, params)
         session.commit()
 
     except exc.SQLAlchemyError as e:
