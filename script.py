@@ -4,10 +4,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import text
 import logging
 from datetime import datetime
+import requests
 
 logging.basicConfig(filename='erros.log', level=logging.INFO)
 
 DATABASE_URI = 'postgresql+psycopg2://postgres:teste@localhost:5432/challenge'
+
+ESTADOS = {}
+CIDADES = {}
 
 ESTADOS_BRASIL = {
     'Acre': 'AC',
@@ -22,7 +26,6 @@ ESTADOS_BRASIL = {
     'Maranhão': 'MA',
     'Mato Grosso': 'MT',
     'Mato Grosso do Sul': 'MS',
-    "Olhos D' Água": 'MS',
     'Minas Gerais': 'MG',
     'Pará': 'PA',
     'Paraíba': 'PB',
@@ -44,9 +47,67 @@ engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-def converter_uf(estado):
-    estado = estado.strip()
-    return ESTADOS_BRASIL.get(estado, estado)
+def obter_uf_por_estado(estado):
+    global ESTADOS
+
+    if not ESTADOS:
+        url = "https://servicodados.ibge.gov.br/api/v1/localidades/estados"
+
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+
+            estados = response.json()
+
+            ESTADOS = {
+                estado_data['nome'].strip().lower(): estado_data['sigla'] for estado_data in estados
+            }
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Erro ao obter os estados do IBGE: {e}")
+            return None
+
+    return ESTADOS.get(estado.strip().lower())
+
+def obter_uf_por_cidade(cidade):
+    global CIDADES
+
+    if not CIDADES:
+        url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+
+            municipios = response.json()
+
+            CIDADES = {
+                municipio['nome'].strip().lower(): municipio['microrregiao']['mesorregiao']['UF']['sigla'] for municipio in municipios
+            }
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Erro ao obter as cidades do IBGE: {e}")
+            return None
+
+    return CIDADES.get(cidade.strip().lower())
+
+def determinar_uf(parametro):
+
+    uf = obter_uf_por_estado(parametro)
+
+    if uf is not None:
+        return uf
+
+    uf = obter_uf_por_cidade(parametro)
+
+    if uf is not None:
+        return uf
+
+    logging.info(f"Nenhum estado ou cidade válido foi encontrado para o parâmetro '{parametro}'.")
+    return None
+
+# def converter_uf(estado):
+#     estado = estado.strip()
+#     return ESTADOS_BRASIL.get(estado, estado)
 
 def validar_data(data):
     try:
@@ -173,7 +234,7 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
             isento_condicao = False
 
         if len(uf) != 2:
-            uf_string = converter_uf(uf)
+            uf_string = determinar_uf(uf)
         else:
             uf_string = uf
 
