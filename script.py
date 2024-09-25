@@ -1,6 +1,7 @@
 import pandas as pd
 from sqlalchemy import create_engine, exc
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql import text
 import logging
 from datetime import datetime
 
@@ -12,16 +13,6 @@ engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-def cliente_existe(cpf_cnpj):
-    query = session.execute(f"SELECT id FROM tbl_clientes WHERE cpf_cnpj = '{cpf_cnpj}'")
-    result = query.fetchone()
-    return result
-
-def tratar_isento(isento):
-    if pd.isna(isento):
-        return 'N'
-    return 'S' if str(isento).lower() in ['true', '1', 'sim', 'yes'] else 'N'
-
 def validar_data(data):
     try:
         if pd.isna(data):
@@ -29,6 +20,12 @@ def validar_data(data):
         return pd.to_datetime(data).strftime("%Y-%m-%d")
     except ValueError:
         return None
+
+def cliente_existe(cpf_cnpj):
+    sql = text(f"SELECT id FROM tbl_clientes WHERE cpf_cnpj = '{cpf_cnpj}'")
+    query = session.execute(sql)
+    result = query.fetchone()
+    return result
     
 def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro):
 
@@ -37,10 +34,10 @@ def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastr
         data_nascimento = validar_data(data_nascimento)
         data_cadastro = validar_data(data_cadastro)
 
-        query = (
+        sql = text((
             "INSERT INTO tbl_clientes (nome_razao_social, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastro) "
             "VALUES (:nome, :nome_fantasia, :cpf_cnpj, :data_nascimento, :data_cadastro)"
-        )
+        ))
 
         params = {
             'nome': nome,
@@ -52,7 +49,7 @@ def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastr
 
         if not cliente_existe(cpf_cnpj):
 
-            session.execute(query, params)
+            session.execute(sql, params)
             session.commit()
 
             return cliente_existe(cpf_cnpj)[0]  
@@ -66,14 +63,25 @@ def inserir_cliente(nome, nome_fantasia, cpf_cnpj, data_nascimento, data_cadastr
 
 def inserir_plano(descricao_plano, valor_plano):
     try:
-        query = "SELECT id FROM tbl_planos WHERE descricao = :descricao_plano"
-        result = session.execute(query, {'descricao_plano': descricao_plano}).fetchone()
+        sql = text("SELECT id FROM tbl_planos WHERE descricao = :descricao_plano")
+
+        params = {
+            'descricao_plano': descricao_plano
+        }
+
+        result = session.execute(sql, params).fetchone()
         
         if result:
             return result[0]
         
-        insert_query = "INSERT INTO tbl_planos (descricao, valor) VALUES (:descricao, :valor) RETURNING id"
-        result = session.execute(insert_query, {'descricao': descricao_plano, 'valor': valor_plano}).fetchone()
+        sql = text("INSERT INTO tbl_planos (descricao, valor) VALUES (:descricao, :valor) RETURNING id")
+
+        params = {
+            'descricao': descricao_plano,
+            'valor': valor_plano
+        }
+
+        result = session.execute(sql, params).fetchone()
         
         session.commit()
         
@@ -86,12 +94,14 @@ def inserir_plano(descricao_plano, valor_plano):
 
 
 def inserir_contato(cliente_id, tipo_contato_id, contato):
+
     try:
-        session.execute(
-            f"INSERT INTO tbl_cliente_contatos (cliente_id, tipo_contato_id, contato) "
-            f"VALUES ({cliente_id}, {tipo_contato_id}, '{contato}')"
-        )
+
+        sql = text(f"SELECT id FROM tbl_cliente_contatos WHERE cliente_id = {cliente_id} AND tipo_contato_id = {tipo_contato_id} AND contato = '{contato}'")
+
+        session.execute(sql)
         session.commit()
+
     except exc.SQLAlchemyError as e:
         session.rollback()
         logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}, motivo: {e}")
@@ -104,22 +114,21 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
             logging.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Plano não encontrado.")
             return
 
-        if isento == 'nan' or pd.isna(isento):
-            isento = 'false'
+        if isento:
+            isento_condicao = True
         else:
-            isento = 'true'
+            isento_condicao = False
 
-        session.execute(
-            f"""
+            sql = text(f"""
             INSERT INTO tbl_cliente_contratos (
                 cliente_id, plano_id, dia_vencimento, status_id, isento, 
                 endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf
             ) VALUES (
-                {cliente_id}, {plano_id}, {vencimento}, {status_id}, {isento}, 
+                {cliente_id}, {plano_id}, {vencimento}, {status_id}, '{isento_condicao}', 
                 '{endereco}', '{numero}', '{complemento}', '{bairro}', '{cep}', '{cidade}', '{uf}'
             )
-            """
-        )
+            """)
+
         session.commit()
 
     except exc.SQLAlchemyError as e:
@@ -191,8 +200,6 @@ def processar_dados(arquivo_excel):
         plano_id = get_plano_id(plano)  
         status_id = get_status_id(status)
 
-        isento = tratar_isento(isento)
-
         inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf)
 
     print(f"Total de registros importados: {registros_importados}")
@@ -206,7 +213,7 @@ def processar_dados(arquivo_excel):
             print(f"Motivo: {motivo}")
 
 def get_plano_id(plano):
-    query = session.execute(f"SELECT id FROM tbl_planos WHERE descricao = '{plano}'")
+    query = session.execute(text(f"SELECT id FROM tbl_planos WHERE descricao = '{plano}'"))
     result = query.fetchone()
     
     if result:
@@ -216,7 +223,7 @@ def get_plano_id(plano):
         return None  
 
 def get_status_id(status):
-    query = session.execute(f"SELECT id FROM tbl_status_contrato WHERE status = '{status}'")
+    query = session.execute(text(f"SELECT id FROM tbl_status_contrato WHERE status = '{status}'"))
     result = query.fetchone()
     return result[0] if result else None
 
