@@ -17,6 +17,11 @@ def cliente_existe(cpf_cnpj):
     result = query.fetchone()
     return result
 
+def tratar_isento(isento):
+    if pd.isna(isento):
+        return 'N'
+    return 'S' if str(isento).lower() in ['true', '1', 'sim', 'yes'] else 'N'
+
 def validar_data(data):
     try:
         if pd.isna(data):
@@ -92,16 +97,22 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
         logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}, motivo: {e}")
 
 def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf):
-    
+
     try:
+
         if plano_id is None:
             logging.info(f"Contrato do cliente {cliente_id} não pode ser inserido. Plano não encontrado.")
             return
 
+        if isento == 'nan' or pd.isna(isento):
+            isento = 'false'
+        else:
+            isento = 'true'
+
         session.execute(
             f"""
             INSERT INTO tbl_cliente_contratos (
-                cliente_id, plano_id, dia_vencimento, status_id, "isento", 
+                cliente_id, plano_id, dia_vencimento, status_id, isento, 
                 endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf
             ) VALUES (
                 {cliente_id}, {plano_id}, {vencimento}, {status_id}, {isento}, 
@@ -179,6 +190,8 @@ def processar_dados(arquivo_excel):
 
         plano_id = get_plano_id(plano)  
         status_id = get_status_id(status)
+
+        isento = tratar_isento(isento)
 
         inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf)
 
