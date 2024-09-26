@@ -13,36 +13,6 @@ DATABASE_URI = 'postgresql+psycopg2://postgres:teste@localhost:5432/challenge'
 ESTADOS = {}
 CIDADES = {}
 
-ESTADOS_BRASIL = {
-    'Acre': 'AC',
-    'Alagoas': 'AL',
-    'Amapá': 'AP',
-    'Amazonas': 'AM',
-    'Bahia': 'BA',
-    'Ceará': 'CE',
-    'Distrito Federal': 'DF',
-    'Espírito Santo': 'ES',
-    'Goiás': 'GO',
-    'Maranhão': 'MA',
-    'Mato Grosso': 'MT',
-    'Mato Grosso do Sul': 'MS',
-    'Minas Gerais': 'MG',
-    'Pará': 'PA',
-    'Paraíba': 'PB',
-    'Paraná': 'PR',
-    'Pernambuco': 'PE',
-    'Piauí': 'PI',
-    'Rio de Janeiro': 'RJ',
-    'Rio Grande do Norte': 'RN',
-    'Rio Grande do Sul': 'RS',
-    'Rondônia': 'RO',
-    'Roraima': 'RR',
-    'Santa Catarina': 'SC',
-    'São Paulo': 'SP',
-    'Sergipe': 'SE',
-    'Tocantins': 'TO'
-}
-
 engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
 session = Session()
@@ -104,11 +74,7 @@ def determinar_uf(parametro):
 
     logging.info(f"Nenhum estado ou cidade válido foi encontrado para o parâmetro '{parametro}'.")
     return None
-
-# def converter_uf(estado):
-#     estado = estado.strip()
-#     return ESTADOS_BRASIL.get(estado, estado)
-
+    
 def validar_data(data):
     try:
         if pd.isna(data):
@@ -216,7 +182,7 @@ def inserir_contato(cliente_id, tipo_contato_id, contato):
         session.rollback()
         logging.info(f"Erro ao inserir contato do cliente ID {cliente_id}, motivo: {e}")
 
-def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf):
+def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf, desconto, ip, mac):
 
     try:
 
@@ -238,7 +204,7 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
         else:
             uf_string = uf
 
-        sql = text("INSERT INTO tbl_cliente_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf) VALUES (:cliente_id, :plano_id, :vencimento, :status_id, :isento, :endereco_logradouro, :endereco_numero, :endereco_complemento, :endereco_bairro, :endereco_cep, :endereco_cidade, :endereco_uf)")
+        sql = text("INSERT INTO tbl_cliente_contratos (cliente_id, plano_id, dia_vencimento, status_id, isento, endereco_logradouro, endereco_numero, endereco_complemento, endereco_bairro, endereco_cep, endereco_cidade, endereco_uf, desconto, ip, mac) VALUES (:cliente_id, :plano_id, :vencimento, :status_id, :isento, :endereco_logradouro, :endereco_numero, :endereco_complemento, :endereco_bairro, :endereco_cep, :endereco_cidade, :endereco_uf, :desconto, :ip, :mac)")
 
         params = {
             'cliente_id': cliente_id,
@@ -252,7 +218,10 @@ def inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endere
             'endereco_bairro': bairro,
             'endereco_cep': cep,
             'endereco_cidade': cidade,
-            'endereco_uf': uf_string
+            'endereco_uf': uf_string,
+            'desconto': desconto,
+            'ip': ip,
+            'mac': mac
         }
 
         session.execute(sql, params)
@@ -298,6 +267,10 @@ def processar_dados(arquivo_excel):
         status = row.get('Status')
         isento = row.get('Isento')
 
+        desconto = row.get('Desconto')
+        ip = row.get('IP')
+        mac = row.get('MAC')
+
         if pd.isna(nome) or pd.isna(cpf_cnpj):
             motivo = f"Nome ou CPF/CNPJ ausente para o registro {row}"
 
@@ -310,6 +283,7 @@ def processar_dados(arquivo_excel):
 
         if cliente_id is None:
             motivo = f"Erro ao inserir ou duplicidade no CPF/CNPJ {cpf_cnpj}"
+            logging.info(motivo)
             registros_nao_importados.append(motivo)
             continue
 
@@ -325,7 +299,7 @@ def processar_dados(arquivo_excel):
         plano_id = get_plano_id(plano)  
         status_id = get_status_id(status)
 
-        inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf)
+        inserir_contrato(cliente_id, plano_id, vencimento, status_id, isento, endereco, numero, complemento, bairro, cep, cidade, uf, desconto, ip, mac)
 
         registros_importados += 1
 
@@ -354,6 +328,6 @@ def get_status_id(status):
     result = query.fetchone()
     return result[0] if result else None
 
-arquivo_excel = '/Users/luis/Documents/Github/excel-challenge/dataset/data.xlsx'
+arquivo_excel = '/Users/luis/Documents/Github/excel-challenge/dataset/data_patch.xlsx'
 
 processar_dados(arquivo_excel)
